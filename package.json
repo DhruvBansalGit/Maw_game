@@ -1,0 +1,15 @@
+{
+  "name": "maw-below-the-static",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5174",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 5174",
+    "test": "node --test tests/*.test.js",
+    "test:browser": "playwright test"
+  },
+  "dependencies": { "three": "0.180.0" },
+  "devDependencies": { "vite": "8.3.5", "@playwright/test": "1.56.1" }
+}
