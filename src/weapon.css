@@ -1,0 +1,12 @@
+/* BANDOOK is intentionally absent from menus; the weapon HUD appears only after unlock. */
+.weapon-hud{position:absolute;right:40px;top:108px;display:flex;align-items:center;gap:12px;padding:10px 14px;background:#0b1713d9;border:1px solid #9bbd9640;pointer-events:none;color:#d1d9bc}
+.weapon-hud>svg{width:33px;height:24px;color:#c7b291;flex:none}
+.weapon-hud strong{display:block;font:9px/1.6 monospace;letter-spacing:1px;color:#d0d9bc}
+.weapon-hud small{display:block;font:7px/1.7 monospace;letter-spacing:.6px;color:#a0ad99}
+.weapon-hud.cooling{border-color:#ac795745}.weapon-hud.cooling strong{color:#c89575}
+.hud.armed .sense-directions{top:190px}
+.hud.armed .crosshair{width:18px;height:18px;transform:translate(-50%,-50%);font-size:0;border:1px solid #d6dfc570;border-radius:50%}
+.hud.armed .crosshair:before,.hud.armed .crosshair:after{content:'';position:absolute;background:#d6dfc5b0;left:50%;top:50%;transform:translate(-50%,-50%)}
+.hud.armed .crosshair:before{width:2px;height:5px}.hud.armed .crosshair:after{width:5px;height:2px}
+.hud.armed.hit .crosshair{border-color:#e6bc86;box-shadow:0 0 12px #bfaa8255}
+@media(max-width:650px){.weapon-hud{right:16px;top:108px;padding:8px;gap:7px;max-width:205px}.weapon-hud strong{font-size:8px}.weapon-hud small{font-size:6px}.weapon-hud>svg{width:24px}.hud.armed .sense-directions{top:200px}}

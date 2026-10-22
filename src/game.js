@@ -1,4 +1,5 @@
 import { makeMaze, key, distance, pathfind, cellOf, neighbors, move, random, walkable } from './maze.js';
+import { CheatSequence, ENEMY_HEALTH, WEAPON, traceShot } from './weapon.js';
 export const ARCHETYPES = [
   { name: 'THE STALKER', speed: .82, cue: 'Something is breathing behind you.' },
   { name: 'THE SCREAMER', speed: 1.05, cue: 'Do not follow the voices.' },
@@ -12,15 +13,42 @@ export class Game {
     this.player = { ...this.maze.spawn, dx: 0, dz: 1, moving: false };
     this.orbs = new Set(this.maze.cells.filter(p => distance(p, this.maze.spawn) > 1.2 && distance(p, this.maze.exit) > .1).map(p => key(p.x, p.z)));
     this.total = this.orbs.size; this.souls = new Set(this.maze.souls.map(p => key(p.x, p.z)));
-    this.enemies = this.maze.spawns.map((p, i) => ({ ...p, type: i, target: null, path: [], stun: 0, wake: 0, decision: 0, lastSeen: { ...this.player }, scare: 0 }));
+    this.enemies = this.maze.spawns.map((p, i) => ({ ...p, type: i, health: ENEMY_HEALTH[i], dead: false, hitFlash: 0, deathAt: null, target: null, path: [], stun: 0, wake: 0, decision: 0, lastSeen: { ...this.player }, scare: 0 }));
+    this.cheat = new CheatSequence(); this.weaponUnlocked = false; this.weaponCooldown = 0;
+    this.shotFlash = 0; this.lastShot = null; this.shotsFired = 0;
     this.ward = 0; this.invulnerable = 5; this.blackout = 0; this.blackoutCooldown = 0; this.sense = 0; this.senseCooldown = 0;
     this.stamina = 1; this.sprintCooldown = 0; this.sprinting = false; this.safeBudget = 6; this.safeRecharge = 0; this.safe = false;
     this.threat = 0; this.nearest = null; this.events = []; this.captureFlash = 0; this.screamFlash = 0; this.pickupFlash = 0;
   }
   start() { this.reset(); this.phase = 'playing'; this.emit('start', 'Collect the lost souls. The gate opens when none remain.'); }
   emit(type, text, extra = {}) { this.events.push({ type, text, ...extra }); }
-  pause() { if (this.phase === 'playing') this.phase = 'paused'; }
+  pause() { if (this.phase === 'playing') { this.phase = 'paused'; this.cheat.reset(); } }
   resume() { if (this.phase === 'paused') this.phase = 'playing'; }
+  typeCheat(event) {
+    if (this.phase !== 'playing') { this.cheat.reset(); return false; }
+    const result = this.cheat.feed(event,this.time);
+    if (result.unlocked && !this.weaponUnlocked) {
+      this.weaponUnlocked = true; this.emit('weapon-unlock','WEAPON UNLOCKED');
+    }
+    return result.consumed;
+  }
+  shoot(origin, direction) {
+    if (this.phase !== 'playing' || !this.weaponUnlocked || this.weaponCooldown > 1e-8) return null;
+    const hit = traceShot(this.maze,this.enemies,origin,direction);
+    if (!hit) return null;
+    this.weaponCooldown = WEAPON.cooldown; this.shotFlash = .25; this.shotsFired++;
+    this.lastShot = {...hit, at:this.time}; this.emit('gunshot');
+    if (hit.kind === 'enemy') {
+      const e = this.enemies[hit.enemyIndex];
+      e.health = Math.max(0,e.health-WEAPON.damage); e.hitFlash = .45; e.stun = Math.max(e.stun,.4);
+      if (e.health === 0) {
+        e.dead = true; e.deathAt = this.time; e.target = null; e.path = []; this.score += 300;
+        this.emit('enemy-defeat',`${ARCHETYPES[e.type].name} · dissolved. ${this.activeEnemies.length} entities remain.`);
+      } else this.emit('enemy-hit',`${ARCHETYPES[e.type].name} · wounded. ${e.health} vitality remains.`);
+    } else if (hit.kind === 'wall') this.emit('bullet-impact');
+    return hit;
+  }
+  get activeEnemies() { return this.enemies.filter(e => !e.dead); }
   senseAction() {
     if (this.phase !== 'playing' || this.senseCooldown > 0) return;
     this.sense = 4; this.senseCooldown = 18; this.emit('sense', 'HEARTBEAT SENSE · their positions are revealed for 4 seconds.');
@@ -39,7 +67,7 @@ export class Game {
   }
   step(dt, input) {
     this.time += dt;
-    for (const field of ['ward','invulnerable','blackout','blackoutCooldown','sense','senseCooldown','sprintCooldown','captureFlash','screamFlash','pickupFlash']) this[field] = Math.max(0, this[field] - dt);
+    for (const field of ['ward','invulnerable','blackout','blackoutCooldown','sense','senseCooldown','sprintCooldown','captureFlash','screamFlash','pickupFlash','weaponCooldown','shotFlash']) this[field] = Math.max(0, this[field] - dt);
     const dx = input.x || 0, dz = input.z || 0, magnitude = Math.hypot(dx, dz);
     this.sprinting = !!input.sprint && magnitude > .01 && this.stamina > .01 && this.sprintCooldown <= 0;
     if (this.sprinting) {
@@ -58,11 +86,11 @@ export class Game {
     else if (!inside) { this.safeRecharge = Math.max(0, this.safeRecharge - dt); if (!this.safeRecharge) this.safeBudget = 6; }
     this.collect();
     for (const enemy of this.enemies) this.updateEnemy(enemy, dt);
-    const sorted = [...this.enemies].sort((a,b) => distance(a,this.player)-distance(b,this.player));
-    this.nearest = sorted[0]; const range = distance(this.nearest, this.player);
+    const sorted = this.activeEnemies.sort((a,b) => distance(a,this.player)-distance(b,this.player));
+    this.nearest = sorted[0] || null; const range = this.nearest ? distance(this.nearest, this.player) : Infinity;
     this.threat = this.ward > 0 || this.safe ? 0 : Math.max(0, 1 - range / 6);
     for (const enemy of this.enemies) {
-      if (distance(enemy, this.player) < .43 && enemy.stun <= 0) {
+      if (!enemy.dead && distance(enemy, this.player) < .43 && enemy.stun <= 0) {
         if (this.ward > 0) { enemy.stun = 7; this.score += 200; this.emit('banish', `${ARCHETYPES[enemy.type].name} · silenced for 7 seconds.`); }
         else if (!this.safe && this.invulnerable <= 0) { this.capture(enemy); break; }
       }
@@ -78,6 +106,8 @@ export class Game {
     if (this.souls.delete(id)) { this.ward = 9; this.score += 50; this.emit('ward', 'SOUL WARD · 9 seconds. Touch a pursuer to silence it.'); }
   }
   updateEnemy(e, dt) {
+    e.hitFlash = Math.max(0,e.hitFlash-dt);
+    if (e.dead) return;
     e.scare = Math.max(0, e.scare - dt);
     if (e.stun > 0) { e.stun = Math.max(0, e.stun - dt); return; }
     const range = distance(e, this.player), progress = 1 - this.orbs.size / this.total;
@@ -116,10 +146,11 @@ export class Game {
     if (step >= d) { e.x = e.target.x; e.z = e.target.z; e.target = null; }
   }
   capture(enemy) {
+    if (this.phase !== 'playing' || enemy.dead) return;
     this.lives--; this.captureFlash = 1.1; this.emit('capture', `${ARCHETYPES[enemy.type].name} found you. ${this.lives} ${this.lives === 1 ? 'life' : 'lives'} remain.`);
     if (this.lives <= 0) { this.phase = 'gameover'; this.emit('lose', 'The labyrinth keeps what it catches.'); return; }
     Object.assign(this.player,this.maze.spawn); this.invulnerable = 5;
-    this.enemies.forEach((e,i) => Object.assign(e,this.maze.spawns[i],{ target:null, path:[], wake:0 }));
+    this.enemies.forEach((e,i) => { if (!e.dead) Object.assign(e,this.maze.spawns[i],{ target:null, path:[], wake:0 }); });
   }
   get collected() { return this.total - this.orbs.size; }
 }

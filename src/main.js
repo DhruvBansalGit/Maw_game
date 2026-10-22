@@ -1,13 +1,15 @@
 import './style.css';
+import './weapon.css';
+import { editableTarget } from './weapon.js';
 import { Game, ARCHETYPES } from './game.js';
 import { World } from './scene.js';
 import { AudioManager } from './audio.js';
 import { CELL, SIZE, distance } from './maze.js';
 
-const DEFAULTS={sensitivity:1,volume:.65,sfx:.8,music:.45,quality:'medium',shake:true,muted:false,minimap:true,reducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches};
+const DEFAULTS={sensitivity:1,volume:.65,sfx:.8,music:.45,quality:'medium',weaponPerspective:'third',shake:true,muted:false,minimap:true,reducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches};
 const load=(key,fallback)=>{try{return JSON.parse(localStorage.getItem(key))??fallback;}catch{return fallback;}};
 const save=(key,value)=>{try{localStorage.setItem(key,JSON.stringify(value));}catch{/* Storage can be disabled; gameplay remains local and usable. */}};
-function readSettings(){const data=load('maw.settings',{}),s={...DEFAULTS};for(const k of ['sensitivity','volume','sfx','music'])if(Number.isFinite(data?.[k]))s[k]=Math.max(k==='sensitivity'?.2:0,Math.min(k==='sensitivity'?2.5:1,data[k]));for(const k of ['shake','muted','minimap','reducedMotion'])if(typeof data?.[k]==='boolean')s[k]=data[k];if(['low','medium','high'].includes(data?.quality))s.quality=data.quality;return s;}
+function readSettings(){const data=load('maw.settings',{}),s={...DEFAULTS};for(const k of ['sensitivity','volume','sfx','music'])if(Number.isFinite(data?.[k]))s[k]=Math.max(k==='sensitivity'?.2:0,Math.min(k==='sensitivity'?2.5:1,data[k]));for(const k of ['shake','muted','minimap','reducedMotion'])if(typeof data?.[k]==='boolean')s[k]=data[k];if(['low','medium','high'].includes(data?.quality))s.quality=data.quality;if(['first','third'].includes(data?.weaponPerspective))s.weaponPerspective=data.weaponPerspective;return s;}
 const settings=readSettings(), game=new Game(), audio=new AudioManager(settings), app=document.querySelector('#app'), canvas=document.querySelector('#world');
 const keys=new Set();const abort=new AbortController();const on=(target,type,handler,options={})=>target.addEventListener(type,handler,{...options,signal:abort.signal});
 let world,error='',lastPhase='',dialog=null,toastUntil=0,toastText='',raf=0,lastTime=performance.now(),uiTime=0,previousFocus=null,disposed=false;
@@ -20,20 +22,23 @@ const clock=time=>`${Math.floor(time/60).toString().padStart(2,'0')}:${Math.floo
 function header(){return `<header class="topbar"><a class="brand" href="#" data-action="menu" aria-label="MAW main menu">${icon}<span>MAW<span class="brand-small">BELOW THE STATIC</span></span></a><div class="connection"><i></i> LOCAL SIGNAL <span>/</span> NO CONNECTION REQUIRED</div><button class="sound-button" data-action="mute" aria-label="${settings.muted?'Unmute':'Mute'} audio" aria-pressed="${settings.muted}">${settings.muted?'SOUND OFF':'SOUND ON'} <span aria-hidden="true">${settings.muted?'▱':'▥'}</span></button></header>`;}
 function render(){
   lastPhase=game.phase;document.body.dataset.phase=game.phase;
-  if(game.phase==='menu')app.innerHTML=`${header()}<main class="menu"><section class="menu-copy"><div class="eyebrow"><span class="signal-dot"></span> TRANSMISSION 001 <span class="dim">/</span> SIGNAL FOUND</div><h1>MAW<span class="title-scratch" aria-hidden="true"></span></h1><div class="subtitle">B E L O W &nbsp; T H E &nbsp; S T A T I C</div><div class="menu-rule"></div><h2>Some things are better left hungry.</h2><p class="intro">You woke up below the surface.<br>Gather the lost souls. Find a way out.<br>And whatever you hear behind you—<em>keep moving.</em></p><button class="primary start" data-action="start" ${error?'disabled':''}>ENTER THE LABYRINTH ${arrow}</button><div class="secondary-actions"><button data-action="how">HOW TO SURVIVE <span>+</span></button><button data-action="settings">SETTINGS ${arrow}</button></div>${error?`<p class="error" role="alert">${error}</p>`:''}<div class="audio-advice"><span aria-hidden="true">◖◗</span> Headphones recommended. Darkness is intentional.</div></section><aside class="scene-label" aria-hidden="true"><div class="locator">+</div><span>SUB-LEVEL 09</span><p>OCCUPANCY: UNKNOWN<br>SIGNAL INTEGRITY: 13%</p><div class="waveform">▁▂▁▅▃▁▂▆▁▃▅▁▂▁▆▃▁▂▅▁▂▁▅▃▁</div></aside></main><footer class="menu-footer"><div><span class="red-text">WARNING</span> &nbsp; Mild flashing lights · unsettling audio · psychological horror</div><div>${highScore?`PERSONAL BEST <b>${highScore.toLocaleString()}</b>`:'FOUR ENTITIES. THREE LIVES. ONE WAY OUT.'}</div><span class="version">V.01 / OFFLINE</span></footer>`;
+  if(game.phase==='menu')app.innerHTML=`${header()}<main class="menu"><section class="menu-copy"><div class="eyebrow"><span class="signal-dot"></span> TRANSMISSION 001 <span class="dim">/</span> SIGNAL FOUND</div><h1>MAW<span class="title-scratch" aria-hidden="true"></span></h1><div class="subtitle">B E L O W &nbsp; T H E &nbsp; S T A T I C</div><div class="menu-rule"></div><h2>Some things are better left hungry.</h2><p class="intro">You woke up below the surface.<br>Gather the lost souls. Find a way out.<br>And whatever you hear behind you—<em>keep moving.</em></p><button class="primary start" data-action="start" ${error?'disabled':''}>ENTER THE LABYRINTH ${arrow}</button><div class="secondary-actions"><button data-action="how">HOW TO SURVIVE <span>+</span></button><button data-action="settings">SETTINGS <span class="settings-forward" aria-hidden="true">→</span></button></div>${error?`<p class="error" role="alert">${error}</p>`:''}<div class="audio-advice"><span aria-hidden="true">◖◗</span> Headphones recommended. Darkness is intentional.</div></section><aside class="scene-label" aria-hidden="true"><div class="locator">+</div><span>SUB-LEVEL 09</span><p>OCCUPANCY: UNKNOWN<br>SIGNAL INTEGRITY: 13%</p><div class="waveform">▁▂▁▅▃▁▂▆▁▃▅▁▂▁▆▃▁▂▅▁▂▁▅▃▁</div></aside></main><footer class="menu-footer"><div><span class="red-text">WARNING</span> &nbsp; Mild flashing lights · unsettling audio · psychological horror</div><div>${highScore?`PERSONAL BEST <b>${highScore.toLocaleString()}</b>`:'FOUR ENTITIES. THREE LIVES. ONE WAY OUT.'}</div><span class="version">V.01 / OFFLINE</span></footer>`;
   else if(game.phase==='playing')app.innerHTML=`<div class="hud"><header class="hud-top"><div class="hud-brand">${icon}<div>SOUL RECOVERY<span>SUB-LEVEL 09</span></div></div><div class="stats"><div><label>RECOVERED</label><strong id="collected">0</strong><small id="total"></small><div class="progress"><i id="progress"></i></div></div><div><label>SCORE</label><strong id="score">00000</strong></div><div><label>TIME BELOW</label><strong id="time">00:00</strong></div></div><button class="pause-button" data-action="pause" aria-label="Pause game">Ⅱ <kbd>ESC</kbd></button></header><div id="toast" class="toast" role="status"></div><div id="capture-caption" class="capture-caption"></div><div id="sense-directions" class="sense-directions" aria-live="off"></div><aside id="map-panel" class="map-panel"><div>FACILITY PLAN <kbd>M</kbd></div><canvas id="minimap" width="228" height="228" aria-label="Maze map: player ivory, souls grey, wards cyan, exit orange or green"></canvas><p><i class="legend-player"></i> YOU <i class="legend-ward"></i> WARD <i class="legend-exit"></i> EXIT</p></aside><div id="context" class="context"></div><footer class="hud-bottom"><div class="vitals"><label>VITAL SIGNS <span id="life-count"></span></label><div id="lives" class="lives"></div><div class="stamina-row"><span>PANIC SPRINT</span><kbd>SHIFT</kbd></div><div class="stamina"><i id="stamina"></i></div><small id="sprint-status">READY</small></div><div class="threat"><div class="heartbeat-line">⌁</div><span id="threat-label">NO IMMEDIATE THREAT</span><div class="threat-track"><i id="threat"></i></div></div><div class="abilities"><div><kbd>SPACE</kbd><span>HEARTBEAT SENSE <small id="sense-status">READY</small></span></div><div><kbd>E</kbd><span>INTERACT <small id="ward-status">FIND THE EMERGENCY SWITCH</small></span></div><button class="look-hint" data-action="lock">CLICK TO CAPTURE MOUSE · Q / R TO TURN</button></div></footer><div class="crosshair" aria-hidden="true">·</div></div>`;
   else {
     const paused=game.phase==='paused',won=game.phase==='won';
-    app.innerHTML=`${header()}<main class="result-screen"><div class="eyebrow">${paused?'TRANSMISSION INTERRUPTED':won?'SIGNAL RESTORED / SURVIVOR FOUND':'SIGNAL LOST / NO RESPONSE'}</div><h1>${paused?'HOLD YOUR<br>BREATH.':won?'STILL<br>BREATHING.':'TAKEN<br>BELOW.'}</h1><p>${paused?'Nothing moves while you are away.':won?'You brought them back. But something followed.':'The labyrinth keeps what it catches.'}</p><div class="result-stats"><div><span>SOULS RECOVERED</span><b>${game.collected} / ${game.total}</b></div><div><span>FINAL SCORE</span><b>${game.score.toLocaleString()}</b></div><div><span>TIME BELOW</span><b>${clock(game.time)}</b></div></div><button class="primary" data-action="${paused?'resume':'start'}">${paused?'RETURN TO THE DARK':'TRY AGAIN'} ${arrow}</button><div class="secondary-actions">${paused?'<button data-action="settings">SETTINGS '+arrow+'</button>':''}<button data-action="menu">MAIN MENU ${arrow}</button></div></main>`;
+    app.innerHTML=`${header()}<main class="result-screen"><div class="eyebrow">${paused?'TRANSMISSION INTERRUPTED':won?'SIGNAL RESTORED / SURVIVOR FOUND':'SIGNAL LOST / NO RESPONSE'}</div><h1>${paused?'HOLD YOUR<br>BREATH.':won?'STILL<br>BREATHING.':'TAKEN<br>BELOW.'}</h1><p>${paused?'Nothing moves while you are away.':won?'You brought them back. But something followed.':'The labyrinth keeps what it catches.'}</p><div class="result-stats"><div><span>SOULS RECOVERED</span><b>${game.collected} / ${game.total}</b></div><div><span>FINAL SCORE</span><b>${game.score.toLocaleString()}</b></div><div><span>TIME BELOW</span><b>${clock(game.time)}</b></div></div><button class="primary" data-action="${paused?'resume':'start'}">${paused?'RETURN TO THE DARK':'TRY AGAIN'} ${arrow}</button><div class="secondary-actions">${paused?'<button data-action="settings">SETTINGS <span class="settings-forward" aria-hidden="true">→</span></button>':''}<button data-action="menu">MAIN MENU ${arrow}</button></div></main>`;
   }
+  if(game.phase==='playing')document.querySelector('.hud').insertAdjacentHTML('beforeend',`<aside id="weapon-hud" class="weapon-hud" hidden aria-label="Weapon status"><svg viewBox="0 0 48 32" aria-hidden="true"><path fill="currentColor" d="M3 6h37v3h5v5H24l-3 14H10l4-14H3z"/><path d="M23 15h8v5h-9" fill="none" stroke="currentColor" stroke-width="2"/></svg><div><strong id="weapon-status">WEAPON READY</strong><small>LMB / F · FIRE · 3s RECHARGE</small><small id="weapon-view-status"></small><small id="enemy-count"></small></div></aside>`);
   if(dialog)showDialog(dialog,true);if(game.phase==='playing')updateHud();
 }
 function showDialog(type,rerender=false){
+  game.cheat.reset();keys.clear();
   if(!rerender)previousFocus=document.activeElement;
   dialog=type;document.querySelector('.modal-backdrop')?.remove();
   const backdrop=document.createElement('div');backdrop.className='modal-backdrop';
   backdrop.innerHTML=`<section class="modal" role="dialog" aria-modal="true" aria-labelledby="dialog-title"><div class="modal-heading"><div><div class="eyebrow">FIELD MANUAL / 09</div><h2 id="dialog-title">${type==='settings'?'Tune the signal.':'Stay alive.'}</h2></div><button data-action="close" class="close" aria-label="Close dialog">×</button></div>${type==='settings'?`
     <p class="modal-intro">Stored on this device. No account. No connection.</p>
+    <label class="setting select-setting"><span>Weapon camera</span><select name="weaponPerspective" aria-label="Weapon camera"><option value="third" ${settings.weaponPerspective==='third'?'selected':''}>Third person</option><option value="first" ${settings.weaponPerspective==='first'?'selected':''}>First person</option></select></label>
     ${[['sensitivity','Mouse sensitivity',.2,2.5,.05],['volume','Master volume',0,1,.01],['sfx','Sound effects',0,1,.01],['music','Ambient drone',0,1,.01]].map(([id,title,min,max,step])=>`<label class="setting"><span>${title}<output id="value-${id}">${id==='sensitivity'?settings[id].toFixed(2)+'×':Math.round(settings[id]*100)+'%'}</output></span><input type="range" name="${id}" aria-label="${title}" min="${min}" max="${max}" step="${step}" value="${settings[id]}"></label>`).join('')}
     <label class="setting select-setting"><span>Render quality</span><select name="quality" aria-label="Render quality">${['low','medium','high'].map(v=>`<option value="${v}" ${settings.quality===v?'selected':''}>${v[0].toUpperCase()+v.slice(1)}${v==='high'?' · dynamic shadows':v==='low'?' · performance':''}</option>`).join('')}</select></label>
     <label class="toggle-setting">Camera shake<input type="checkbox" name="shake" ${settings.shake?'checked':''}></label><label class="toggle-setting">Reduce motion & flicker<input type="checkbox" name="reducedMotion" ${settings.reducedMotion?'checked':''}></label><label class="toggle-setting">Mute all audio<input type="checkbox" name="muted" ${settings.muted?'checked':''}></label><p class="fine-print">Low quality reduces resolution and disables shadows. Reduce motion suppresses camera shake, decorative movement, sparks, and light flicker. Audio is synthesized locally.</p><button class="primary" data-action="close">SAVE & RETURN ${arrow}</button>`:`
@@ -71,6 +76,7 @@ on(app,'input',event=>{
   save('maw.settings',settings);audio.apply(settings);world?.applySettings(settings);
 });
 on(window,'keydown',event=>{
+  if(editableTarget(event.target)||event.isComposing){game.cheat.reset();if(event.code!=='Escape'&&event.code!=='Tab')return;}
   if(dialog){
     if(event.code==='Escape'){event.preventDefault();closeDialog();return;}
     if(event.code==='Tab'){const focusable=[...document.querySelectorAll('.modal button,.modal input,.modal select')];const first=focusable[0],last=focusable.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}}
@@ -78,16 +84,30 @@ on(window,'keydown',event=>{
   }
   if(event.code==='Escape'){event.preventDefault();if(game.phase==='playing')setPause();else if(game.phase==='paused')resume();return;}
   if(game.phase!=='playing')return;
+  if(event.ctrlKey||event.metaKey||event.altKey)return;
+  if(game.typeCheat(event)){event.preventDefault();keys.delete(event.code);return;}
   if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight'].includes(event.code))event.preventDefault();
   keys.add(event.code);if(event.repeat)return;
   if(event.code==='KeyM'){settings.minimap=!settings.minimap;save('maw.settings',settings);}
   if(event.code==='Space')game.senseAction();if(event.code==='KeyE')game.interact();
+  if(event.code==='KeyF'){event.preventDefault();world?.fireWeapon();}
+  if(event.code==='KeyV'&&game.weaponUnlocked){
+    settings.weaponPerspective=settings.weaponPerspective==='third'?'first':'third';
+    save('maw.settings',settings);world?.applySettings(settings);
+    notify(settings.weaponPerspective==='third'?'THIRD-PERSON WEAPON VIEW':'FIRST-PERSON WEAPON VIEW');
+  }
 });
 on(window,'keyup',event=>keys.delete(event.code));
 on(window,'blur',()=>{keys.clear();setPause();});
 on(document,'visibilitychange',()=>{if(document.hidden){keys.clear();setPause();}});
 on(document,'pointerlockchange',()=>{if(!document.pointerLockElement&&game.phase==='playing')setPause();});
 on(canvas,'click',lockMouse);
+// The click that acquires pointer lock never wastes a round. F remains available
+// when a browser declines lock, and UI clicks can never fire the weapon.
+on(document,'mousedown',event=>{
+  if(event.button===0&&document.pointerLockElement===canvas&&!dialog&&!editableTarget(event.target))world?.fireWeapon();
+});
+on(document,'focusin',event=>{if(editableTarget(event.target)){game.cheat.reset();keys.clear();}});
 on(document,'mousemove',event=>{if(document.pointerLockElement===canvas&&game.phase==='playing')world?.look(event.movementX,event.movementY);});
 on(canvas,'webglcontextlost',event=>{event.preventDefault();setPause();notify('Graphics context lost. Reload this page to restore the renderer.');});
 function input(dt){
@@ -105,12 +125,19 @@ function map(){
   for(const id of game.souls){const [x,z]=id.split(',').map(Number);c.fillStyle='#85cbbb';c.fillRect((x+.5)*unit-2.5,(z+.5)*unit-2.5,5,5);}
   const ex=game.maze.exit;c.fillStyle=game.orbs.size?'#c0764f':'#9af2b9';c.fillRect(ex.x*unit,ex.z*unit,unit-1,unit-1);
   const sw=game.maze.switch;c.fillStyle='#b8a178';c.fillRect((sw.x+.5)*unit-2,(sw.z+.5)*unit-2,4,4);
-  if(game.sense>0){c.fillStyle='#e36a53';game.enemies.forEach(e=>{c.beginPath();c.arc((e.x+.5)*unit,(e.z+.5)*unit,3.5,0,Math.PI*2);c.fill();});}
+  if(game.sense>0){c.fillStyle='#e36a53';game.activeEnemies.forEach(e=>{c.beginPath();c.arc((e.x+.5)*unit,(e.z+.5)*unit,3.5,0,Math.PI*2);c.fill();});}
   c.save();c.translate((game.player.x+.5)*unit,(game.player.z+.5)*unit);c.rotate(-Math.atan2(game.player.dx,game.player.dz));c.fillStyle='#efe9cc';c.beginPath();c.moveTo(0,5);c.lineTo(-3,-3);c.lineTo(3,-3);c.closePath();c.fill();c.restore();
 }
 function updateHud(){
   if(game.phase!=='playing')return;
   const text=(id,value)=>{const e=document.getElementById(id);if(e&&e.textContent!==value)e.textContent=value;};
+  const weaponHud=document.querySelector('#weapon-hud');weaponHud.hidden=!game.weaponUnlocked;
+  weaponHud.classList.toggle('cooling',game.weaponCooldown>1e-8);
+  document.querySelector('.hud').classList.toggle('armed',game.weaponUnlocked);
+  document.querySelector('.hud').classList.toggle('hit',game.lastShot?.kind==='enemy'&&game.time-game.lastShot.at<.4);
+  text('weapon-status',game.weaponCooldown>1e-8?`WEAPON READY IN ${Math.ceil(game.weaponCooldown-1e-8)}s`:'WEAPON READY');
+  text('enemy-count',`ENTITIES REMAINING ${game.activeEnemies.length} / ${game.enemies.length}`);
+  text('weapon-view-status',`V · ${settings.weaponPerspective==='third'?(world.firstPerson?'THIRD PERSON / TIGHT CORNER':'THIRD PERSON'):'FIRST PERSON'}`);
   text('collected',String(game.collected).padStart(3,'0'));text('total',` / ${game.total}`);text('score',String(game.score).padStart(5,'0'));text('time',clock(game.time));
   text('life-count',`${game.lives} / 3`);const lives=document.querySelector('#lives');if(lives.dataset.count!==String(game.lives)){lives.innerHTML=[0,1,2].map(i=>`<span class="${i<game.lives?'':'lost'}">${icon}</span>`).join('');lives.dataset.count=game.lives;}
   document.querySelector('#progress').style.width=`${game.collected/game.total*100}%`;
@@ -130,7 +157,7 @@ function updateHud(){
   const toast=document.querySelector('#toast');toast.textContent=toastText;toast.classList.toggle('visible',performance.now()<toastUntil);
   text('capture-caption',game.captureFlash>.25?'DO NOT LET IT KEEP YOU.':game.screamFlash>.1?'DID YOU HEAR THAT?':'');
   const sense=document.querySelector('#sense-directions');
-  if(game.sense>0){sense.innerHTML=game.enemies.map(e=>{const angle=Math.atan2(e.x-game.player.x,e.z-game.player.z)-world.yaw+Math.PI;return `<div class="sense-entity"><span style="transform:rotate(${-angle*180/Math.PI}deg)">↑</span><small>${ARCHETYPES[e.type].name.replace('THE ','')}<b>${Math.round(distance(e,game.player)*CELL)} m</b></small></div>`;}).join('');}else sense.replaceChildren();
+  if(game.sense>0){sense.innerHTML=game.activeEnemies.map(e=>{const angle=Math.atan2(e.x-game.player.x,e.z-game.player.z)-world.yaw+Math.PI;return `<div class="sense-entity"><span style="transform:rotate(${-angle*180/Math.PI}deg)">↑</span><small>${ARCHETYPES[e.type].name.replace('THE ','')}<b>${Math.round(distance(e,game.player)*CELL)} m</b></small></div>`;}).join('');}else sense.replaceChildren();
   map();
 }
 function loop(now){

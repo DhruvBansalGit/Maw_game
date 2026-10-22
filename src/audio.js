@@ -37,6 +37,11 @@ export class AudioManager {
   }
   event(type){
     switch(type){
+      case 'weapon-unlock':this.tone(85,1.1,.13,'triangle',240);this.hiss(.3,.09,550);break;
+      case 'gunshot':this.hiss(.18,.26,1600);this.tone(125,.32,.26,'triangle',28);this.hiss(.5,.07,280);break;
+      case 'bullet-impact':this.tone(1700,.1,.035,'triangle',450);break;
+      case 'enemy-hit':this.hiss(.3,.12,650);this.tone(360,.25,.07,'sawtooth',110);break;
+      case 'enemy-defeat':this.hiss(1,.15,800);this.tone(460,1.1,.12,'sine',45);break;
       case 'pickup':this.tone(590,.13,.055,'sine',920);break;
       case 'ward':case 'sense':this.tone(140,1,.15,'sine',420);this.tone(210,1.3,.07,'sine',630);break;
       case 'banish':this.hiss(.6,.2,410);this.tone(310,.7,.15,'triangle',45);break;

@@ -53,11 +53,31 @@ Stop the dev server before previewing on the same port. Both commands bind to lo
 - **Space:** heartbeat sense. Reveals enemy directions/distances and minimap positions for 4 seconds; 18-second cooldown.
 - **E:** use the emergency blackout console at the central hub; read sealed-exit status when nearby.
 - **M:** toggle the minimap.
+- **V:** switch first/third-person weapon view after BANDOOK. The choice is also available in Settings > Weapon camera and saved locally.
 - **Escape:** pause/resume. Losing focus or pointer lock also pauses the run.
 
 Close third-person camera with wall raycasts and a first-person fallback in tight corners. The player is hidden when the camera is too close, preventing a view inside the character. Keyboard/mouse desktop play is the target; narrow-screen menus are responsive, but touch movement controls are not provided.
 
 ## Survive the labyrinth
+
+### Hidden weapon cheat: BANDOOK
+
+During a run, type **BANDOOK** (case insensitive) to see **WEAPON UNLOCKED**. There is no visible cheat button. Expected A/D letters are consumed after the opening B, rather than moving the player; other movement/action keys and autorepeat do not corrupt the partial code. Unrelated typed letters reset the sequence. A partial code expires after five gameplay seconds without another matching letter. Menus, pause, modifiers, IME composition, settings fields, text inputs, and editable content cannot activate it.
+
+The unlock equips a procedural rusted, bone-bound sidearm. **Third-person weapon view is the default**: Pac-Man and the weapon at his side stay visible, with a first-person fallback in tight corners. Press **V** to switch to first person and back, or select Weapon camera in Settings. Aim with the central reticle and mouse look (or Q/R). **Left mouse fires after pointer lock; F fires even if pointer lock is unavailable.** The click that first captures the mouse does not spend a shot.
+
+- Unlimited spectral rounds, with a **3-second cooldown after every fired shot**, including a miss or wall impact. The HUD shows `WEAPON READY IN 3s` down to `WEAPON READY`, a gun icon, camera mode, controls, and the active enemy count.
+- Cooldown uses the engine's elapsed gameplay time, stops during pause, and cannot be reset by retyping the code. Duplicate, held/repeated, and simultaneous firing inputs do not bypass it.
+- Scene-unit ray/AABB intersection chooses the nearest wall or live enemy head/torso collider. Walls, floor, and ceiling block bullets; no auto-aim or area damage. Reach is 42 scene meters. Limb decorations are not hitboxes.
+- In third person, the camera ray picks the reticle point and the shot travels from the world-space muzzle toward that point. An additional eye-to-muzzle check prevents a barrel touching a wall from spawning bullets on its other side. Looking around a corner does not let the weapon shoot through it.
+- Damage is **50**. Stalker/Screamer have **100 health** (two hits); Watcher/Hunter have **150 health** (three hits). Wounded entities react and stagger for 0.4 seconds, then continue their original behavior while the gun recharges.
+- Defeated entities fade, stretch and disintegrate into soul particles, award 300 points, and are excluded from AI, capture, threat/audio targeting, sensing and minimap markers. They do not respawn on life loss. Surviving enemies stay dangerous.
+- Muzzle flash, recoil, procedural gunshot/impact sounds, impact particles, hit reticle feedback and subtle camera shake are included. Reduced-motion mode disables weapon recoil, muzzle flash and shake.
+- Losing a life retains the unlock, damage/deaths and cooldown. **Restart / main menu resets** the gun to locked and restores every enemy. The cheat is not persisted to localStorage and adds no service, asset download or dependency.
+
+This release includes BANDOOK plus the requested three-second cooldown, selectable weapon perspectives, corrected rear animation, and a normal forward arrow on the Settings buttons. Other Pac-Man action icons are unchanged.
+
+### Main objective
 
 1. Collect the pale floating souls. All 175 are reachable in the deterministic 19 × 19 connected grid.
 2. Four cyan **Soul Wards** grant 9 seconds of protection. Contact banishes an entity for 7 seconds and awards a bonus.
@@ -79,7 +99,7 @@ All routes use grid BFS. Enemies change direction at cell centers instead of cut
 
 ## Art, audio, accessibility, performance
 
-- Weathered split-jaw spherical player; eyes, teeth, glowing mouth, movement-dependent bite animation, and trailing particles.
+- Weathered spherical player with one continuous skin and a front-only animated mouth wedge. Rear vertices stay fixed during the bite cycle; the old rotating hemispheres and overlapping rear mouth disks have been removed. Eyes, teeth, glowing mouth and trailing particles remain.
 - Distinct procedural entity silhouettes, shrouds, elongated limbs, the Watcher's crown, and skeletal Hunter geometry.
 - Cracked/stained concrete, overhead pipes, warning signs, emergency lamps, gurney, debris, webs, drifting dust, and occasional sparks.
 - Exponential scene fog and emissive fixtures provide atmosphere without expensive volumetric ray marching. No postprocessing bloom dependency.
@@ -95,9 +115,13 @@ All routes use grid BFS. Enemies change direction at cell centers instead of cut
 - [index.html](index.html): local entry point and canvas.
 - [src/main.js](src/main.js): application states, desktop input, HUD/minimap, dialogs, settings, persistence, lifecycle.
 - [src/scene.js](src/scene.js): Three.js renderer, procedural environment and characters, lighting, animation, camera collision, resource disposal.
+- [src/pacman-body.js](src/pacman-body.js): continuous spherical skin and front-only mouth deformation with a fixed rear surface.
 - [src/maze.js](src/maze.js): seeded connected maze, BFS paths, circle collision, substepped movement.
 - [src/game.js](src/game.js): engine, four enemy behaviors, collectibles, power-ups, capture, scoring, win/loss.
 - [src/audio.js](src/audio.js): procedural sound graph and transient-resource cleanup.
+- [src/weapon.js](src/weapon.js): cheat sequence, weapon balance, renderer-independent wall/target ray tests.
+- [src/weapon-view.js](src/weapon-view.js): procedural 3D sidearm, muzzle flash, pooled impact and defeat particles.
+- [src/weapon.css](src/weapon.css): unlocked-only weapon HUD and aiming/hit reticle.
 - [src/style.css](src/style.css): horror menu, responsive HUD, dialogs, overlays.
 - [package.json](package.json): npm commands and pinned minimal dependencies.
 - [playwright.config.js](playwright.config.js): local browser test setup; uses installed Chrome on macOS when available, Chromium otherwise.
@@ -115,11 +139,11 @@ If no compatible Chrome/Playwright browser is installed, run `npx playwright ins
 
 Verified in this workspace:
 
-- **20 engine tests pass:** maze connectivity and every objective's reachability, orthogonal BFS, player wall collision/tunneling, equal-time movement, normalized diagonals, orb count/reset, long-running enemy collision checks, all mechanics, capture, three lives, pause, victory, and last-life race handling. A complete collection-to-exit route is exercised using the actual movement integrator with enemies disabled, not just teleporting between objectives.
-- **9 browser journeys pass:** actual WebGL draws, local-only requests, real keyboard movement and collection, camera/map/sense, pause/resume, settings persistence, game-over/restarts, victory/high score, narrow layout, camera-wall regression, actual Web Audio output/mute/pause, reduced-motion setting, frame-budget sampling, and WebGL failure UI.
-- Native headless Chrome measured **about 30.35 FPS at 1440 × 900**, medium preset, with 111 draw calls and 27,502 visible triangles during the sampled view. This is a measurement on this machine, not a promise across devices or all views. Use Low on slower hardware.
-- Optimized production build smoke-tested with real movement, collection, and sense: **no page errors, no remote requests, and no development test surface**.
-- Production build succeeds; its single approximately 549 kB minified JavaScript bundle (144 kB gzip, including Three.js) produces a non-fatal Vite chunk-size advisory.
+- **30 engine tests pass:** the original 20 maze/gameplay tests, eight weapon suites, and two mesh tests cover activation, ray obstruction, damage, three-second timing, pause/reset, AI and fixed rear vertices/front mouth surfaces. A complete collection-to-exit route is exercised using the actual movement integrator with enemies disabled, not just teleporting between objectives.
+- **18 browser journeys pass:** the original nine cover WebGL, local-only requests, controls, camera, audio, settings, lifecycle and fallback. Five weapon journeys cover typed unlock, shooting, three-second countdown, pause, defeat, exclusions and effects. Four additional journeys cover the Settings arrow, persistent camera choice, V toggling both ways, real hits in both perspectives, third-person wall obstruction and rear-surface ray checks. If headless Chrome declines native pointer lock, the mouse dispatch branch is tested with a simulated granted lock; native pointer-lock permission behavior remains browser-dependent.
+- Native headless Chrome measured **about 60.16 FPS at 1440 × 900**, medium preset, with 110 draw calls and 28,318 visible triangles during the sampled unarmed view. This is a measurement on this machine, not a promise across devices or all views. Use Low on slower hardware.
+- Optimized production build smoke-tested locally with real typed BANDOOK activation, F firing/cooldown and pause/resume, in addition to the earlier movement/collection/sense checks: **no page errors, no remote requests, and no development test surface**.
+- Production build succeeds; its single approximately 563 kB minified JavaScript bundle (148 kB gzip, including Three.js) produces a non-fatal Vite chunk-size advisory.
 - **npm audit: zero vulnerabilities**, including development dependencies.
 
 Browser snapshots are under [artifacts/qa](artifacts/qa). Automated mechanics checks are extensive, but difficulty has not been validated by a completed unaided human survival run. Only Chromium/Chrome were exercised; Safari and Firefox have not been tested here.

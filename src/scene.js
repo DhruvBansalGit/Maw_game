@@ -1,5 +1,8 @@
 import * as THREE from 'three';
 import { CELL, SIZE, random, key, walkable, distance } from './maze.js';
+import { WeaponView } from './weapon-view.js';
+import { PacmanBody } from './pacman-body.js';
+import { traceShot } from './weapon.js';
 const TAU = Math.PI * 2;
 const v3 = (x,y,z) => new THREE.Vector3(x,y,z);
 
@@ -41,6 +44,7 @@ export class World {
     this.rust=new THREE.MeshStandardMaterial({color:0x514039,roughness:.91,metalness:.55});
     this.dark=new THREE.MeshStandardMaterial({color:0x111a18,roughness:.72,metalness:.6});
     this.buildMaze();this.buildPlayer();this.buildEnemies();this.buildItems();this.buildDetails();
+    this.weaponView=new WeaponView(this.scene);
     this.scene.add(new THREE.HemisphereLight(0x9bb1a0,0x171715,1.0));
     this.flashlight=new THREE.SpotLight(0xd2e0c2,29,24,Math.PI/4.4,.6,1.2);this.flashlight.castShadow=true;
     this.flashlight.shadow.mapSize.set(512,512);this.flashlight.shadow.bias=-.001;this.scene.add(this.flashlight,this.flashlight.target);
@@ -79,11 +83,10 @@ export class World {
     const skinTexture=concrete(51);this.textures.push(skinTexture);
     const skin=new THREE.MeshStandardMaterial({map:skinTexture,color:0xc9bd86,roughness:.88,metalness:.08});
     this.jawTop=new THREE.Group();this.jawBottom=new THREE.Group();this.face.add(this.jawTop,this.jawBottom);
-    const r=.67;
-    this.mesh(new THREE.SphereGeometry(r,36,20,0,TAU,0,Math.PI/2),skin,this.jawTop).castShadow=true;
-    this.mesh(new THREE.SphereGeometry(r,36,20,0,TAU,Math.PI/2,Math.PI/2),skin,this.jawBottom).castShadow=true;
+    this.pacmanBody=new PacmanBody(.67);
+    this.mesh(this.pacmanBody.skin,skin,this.face).castShadow=true;
     const mouth=new THREE.MeshStandardMaterial({color:0x110e0c,side:THREE.DoubleSide,roughness:.9});
-    for(const jaw of [this.jawTop,this.jawBottom]){const disc=this.mesh(new THREE.CircleGeometry(r,36),mouth,jaw);disc.rotation.x=Math.PI/2;}
+    this.pacmanBody.mouths.forEach(geometry=>this.mesh(geometry,mouth,this.face));
     const throat=new THREE.MeshStandardMaterial({color:0x271a0a,emissive:0x9e4917,emissiveIntensity:1.3});
     this.mesh(new THREE.SphereGeometry(.29,16,12),throat,this.face);
     const eyeMat=new THREE.MeshStandardMaterial({color:0x040706,roughness:.18});const pupil=new THREE.MeshBasicMaterial({color:0xe4e9c8});
@@ -177,15 +180,47 @@ export class World {
   }
   applySettings(settings){this.settings=settings;const q=settings.quality;this.renderer.setPixelRatio(Math.min(devicePixelRatio,q==='high'?1.75:q==='medium'?1.25:1));this.renderer.shadowMap.enabled=q==='high';this.renderer.shadowMap.type=THREE.PCFSoftShadowMap;}
   look(dx,dy){this.yaw-=dx*this.settings.sensitivity*.002;this.pitch=THREE.MathUtils.clamp(this.pitch+dy*this.settings.sensitivity*.001,-.3,.35);}
+  fireWeapon() {
+    if (!this.game.weaponUnlocked || this.game.phase!=='playing') return null;
+    this.update(0);
+    const aim=this.weaponAim();
+    return this.game.shoot(aim.origin,aim.direction);
+  }
+  weaponAim() {
+    const game=this.game,eye=v3(game.player.x*CELL,1.45,game.player.z*CELL);
+    const viewDirection=this.camera.getWorldDirection(new THREE.Vector3());
+    const target=traceShot(game.maze,game.enemies,this.camera.position,viewDirection);
+    const point=new THREE.Vector3().copy(target.point);
+    if(this.firstPerson)return {origin:eye,direction:viewDirection,point};
+    // Camera ray selects the reticle point. The real shot starts at the weapon,
+    // not at the remote camera. Check the eye-to-muzzle segment too: a barrel
+    // touching/entering a wall must not let a bullet spawn on its other side.
+    const origin=this.weaponView.worldMuzzle();
+    const reach=origin.clone().sub(eye),wall=traceShot(game.maze,[],eye,reach);
+    if(wall&&wall.kind==='wall'&&wall.distance<=reach.length())return {origin:eye,direction:reach.normalize(),point};
+    const direction=point.clone().sub(origin).normalize();
+    return {origin,direction,point};
+  }
   update(dt){
     this.elapsed+=dt;
     const game=this.game,t=this.settings.reducedMotion?0:this.elapsed,p=game.player,isMenu=game.phase==='menu';this.syncItems();
     this.player.position.set(p.x*CELL,.89+Math.sin(t*3)*.045,p.z*CELL);
-    const facing=Math.atan2(p.dx,p.dz);this.face.rotation.y+=Math.atan2(Math.sin(facing-this.face.rotation.y),Math.cos(facing-this.face.rotation.y))*Math.min(1,dt*12);
-    const bite=(Math.sin(t*(p.moving?15:3))*.5+.5)*(p.moving?.42:.11)+.06;this.jawTop.rotation.x=-bite;this.jawBottom.rotation.x=bite;
+    const facing=game.weaponUnlocked?this.yaw+Math.PI:Math.atan2(p.dx,p.dz);this.face.rotation.y+=Math.atan2(Math.sin(facing-this.face.rotation.y),Math.cos(facing-this.face.rotation.y))*Math.min(1,dt*12);
+    const bite=(Math.sin(t*(p.moving?15:3))*.5+.5)*(p.moving?.42:.11)+.06;
+    this.pacmanBody.update(bite);this.jawTop.rotation.x=-bite;this.jawBottom.rotation.x=bite;
     this.player.visible=true;
     this.trail.forEach((m,i)=>{m.position.set(p.x*CELL-p.dx*(i+1)*.23,.65+Math.sin(t*3+i)*.08,p.z*CELL-p.dz*(i+1)*.23);m.visible=p.moving;});
-    this.enemyModels.forEach((m,i)=>{const e=game.enemies[i];m.group.position.set(e.x*CELL,.06+Math.sin(t*(i===1?5:2)+i)*.08,e.z*CELL);m.group.rotation.y=Math.atan2(p.x-e.x,p.z-e.z);m.arms.forEach((a,j)=>a.rotation.x=Math.sin(t*3+j*3)*.12);m.group.visible=e.stun<=0 || Math.sin(t*14)>.4;m.cloth.emissive.set(game.ward>0?0x174938:0x000000);});
+    this.enemyModels.forEach((m,i)=>{
+      const e=game.enemies[i],death=e.dead?Math.min(1,(game.time-e.deathAt)/1.2):0;
+      m.group.position.set(e.x*CELL,.06+Math.sin(t*(i===1?5:2)+i)*.08+death*.7,e.z*CELL);
+      m.group.rotation.y=Math.atan2(p.x-e.x,p.z-e.z);
+      m.group.rotation.z=e.hitFlash>0&&!this.settings.reducedMotion?Math.sin(e.hitFlash*32)*.10:0;
+      m.group.scale.set(1-death*.8,(i===3?1.17:1)*(1+death*.5),1-death*.8);
+      m.arms.forEach((a,j)=>a.rotation.x=Math.sin(t*3+j*3)*.12);
+      m.group.visible=e.dead?death<1:e.stun<=0 || this.settings.reducedMotion || Math.sin(t*14)>.4;
+      m.group.traverse(o=>{if(o.material){o.material.transparent=e.dead;o.material.opacity=1-death;o.material.depthWrite=!e.dead;}});
+      m.cloth.emissive.set(e.dead?0x55997a:e.hitFlash>0?0x778866:game.ward>0?0x174938:0x000000);
+    });
     this.soulModels.forEach(m=>{m.group.visible=game.souls.has(m.id);m.group.rotation.y=t*.65;m.group.position.y=.83+Math.sin(t*2)*.13;});
     this.orbs.position.y=Math.sin(t*2)*.045;
     this.gateMat.emissive.set(game.orbs.size?0x55150c:0x3cbe82);this.gateBars.position.y=game.orbs.size?0:2.8;
@@ -208,12 +243,24 @@ export class World {
     if(this.settings.shake && !this.settings.reducedMotion && game.captureFlash>0){this.camera.position.x+=Math.sin(t*90)*.07*game.captureFlash;this.camera.position.y+=Math.cos(t*74)*.04*game.captureFlash;}
     const forward=v3(-Math.sin(this.yaw),0,-Math.cos(this.yaw));
     const boom=this.camera.position.distanceTo(target);
-    this.firstPerson=!isMenu && boom<1.75;
-    // A tight corner must never put the lens inside the spherical character.
-    // Transition to a forward-looking first-person view until the boom can extend.
-    this.player.visible=!this.firstPerson;
+    // Decide the fallback from the collision-resolved destination, not the old
+    // first-person camera position; otherwise V can get stuck in first person.
+    this.firstPerson=!isMenu && desired.distanceTo(target)<1.75;
+    // Hide the character while the boom extends out of their body after V.
+    this.player.visible=!this.firstPerson && (isMenu || boom>=1.75);
     const lookTarget=target.clone();
     if(!isMenu)lookTarget.addScaledVector(forward,Math.max(0,1-(boom-.5)/2)*4);
+    if(game.weaponUnlocked&&!isMenu&&(this.settings.weaponPerspective==='first'||this.firstPerson)) {
+      this.firstPerson=true;this.player.visible=false;
+      this.camera.position.set(p.x*CELL,1.45,p.z*CELL);
+      lookTarget.copy(this.camera.position).add(new THREE.Vector3(forward.x,-Math.tan(this.pitch),forward.z));
+      if(this.settings.shake&&!this.settings.reducedMotion&&game.shotFlash>0)lookTarget.y+=Math.sin(game.shotFlash*60)*game.shotFlash*.04;
+    } else if(game.weaponUnlocked&&!isMenu) {
+      // Preserve the wall-colliding follow boom. Look past the player rather
+      // than directly at their back, keeping the reticle usable for aiming.
+      lookTarget.set(p.x*CELL,1.45,p.z*CELL).addScaledVector(forward,8);
+      lookTarget.y-=Math.tan(this.pitch)*8;
+    }
     this.camera.lookAt(lookTarget);this.lastPhase=game.phase;
     this.flashlight.position.copy(this.camera.position);
     this.flashlight.target.position.copy(target).addScaledVector(isMenu?v3(0,0,1):forward,6);this.flashlight.target.position.y=.8;
@@ -224,7 +271,11 @@ export class World {
     const spark=nearest[0];this.sparkPoints.position.set(spark.x,2.2-(t%1)*.7,spark.z);this.sparkPoints.visible=Math.sin(t*3.1)>.985;
     this.dust.rotation.y=Math.sin(t*.03)*.007;
     this.scene.fog.density=game.blackout>0?.068:.038;
+    this.weaponView.update(game,this.settings,this.camera.aspect);
+    const aimPoint=game.weaponUnlocked?traceShot(game.maze,game.enemies,this.camera.position,this.camera.getWorldDirection(new THREE.Vector3())).point:null;
+    this.weaponView.placeWorld(game,this.firstPerson,this.yaw,aimPoint);
     this.renderer.render(this.scene,this.camera);
+    this.weaponView.render(this.renderer,game);
   }
-  dispose(){window.removeEventListener('resize',this.resize);const geometries=new Set(),materials=new Set();this.scene.traverse(o=>{if(o.geometry)geometries.add(o.geometry);if(o.material)(Array.isArray(o.material)?o.material:[o.material]).forEach(m=>materials.add(m));});geometries.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());this.textures.forEach(t=>t.dispose());this.renderer.dispose();}
+  dispose(){window.removeEventListener('resize',this.resize);this.weaponView.dispose();const geometries=new Set(),materials=new Set();this.scene.traverse(o=>{if(o.geometry)geometries.add(o.geometry);if(o.material)(Array.isArray(o.material)?o.material:[o.material]).forEach(m=>materials.add(m));});geometries.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());this.textures.forEach(t=>t.dispose());this.renderer.dispose();}
 }
