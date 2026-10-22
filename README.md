@@ -1,8 +1,26 @@
 # MAW — Below the Static
 
-A complete, localhost-only 3D horror maze game built with Three.js and Vite. Recover 175 lost souls, survive four hunting entities, and escape the underground facility. Three lives. One way out.
+A complete, client-side 3D horror maze game built with Three.js and Vite, playable locally or through its optional static deployment. Recover 175 lost souls, survive four hunting entities, and escape the underground facility. Three lives. One way out.
 
-All character models, concrete textures, signs, atmosphere, and audio are generated locally. **No backend, Firebase, authentication, API keys, CDN assets, analytics, or cloud services.** The only saved data is settings and a personal best in localStorage. Runs are not saved between page loads.
+All character models, concrete textures, signs, atmosphere, and audio are generated in the browser. **No game backend, Firebase, authentication, API keys, third-party runtime assets, analytics, or cloud data services.** The only saved data is settings and a personal best in localStorage. Runs are not saved between page loads.
+
+## GitHub and hosted game
+
+- **Play:** https://maw-game-eight.vercel.app
+- **Source:** https://github.com/DhruvBansalGit/Maw_game (branch `main`)
+- **Vercel project:** `maw-game`, scope `dhruv-820e`; static Vite output in `dist`, built with `npm ci` and `npm run build`, Node 24.
+
+Published at the owner's request using the existing Vercel Hobby account; no billing changes or backend services were added. Hobby is for personal, non-commercial use. The production alias is publicly accessible without a Vercel login; preview/deployment URLs retain the account's default protection.
+
+**Automatic GitHub deployment is not connected.** Vercel rejected repository linking because its GitHub integration does not have access to `DhruvBansalGit/Maw_game`. The source upload and CLI production deployment both succeeded independently. To enable push-to-deploy, grant the Vercel GitHub App access to this repository, then connect it under the Vercel project's Settings > Git. Until then, deploy from this folder with an authorized Vercel CLI session:
+
+```sh
+npx vercel deploy --prod --scope dhruv-820e
+```
+
+For a fresh clone, first run `npx vercel link --project maw-game --scope dhruv-820e` with the correct Vercel account. No game environment variables are required. GitHub credentials were supplied only transiently for the push and were not placed in source, remote URLs, Git history, or Vercel variables. Deployment metadata, environment files, dependencies, and generated test artifacts are excluded from Git; non-runtime files are excluded from the Vercel upload.
+
+Hosted Chrome smoke checks passed: public HTTP 200, real movement and soul collection, heartbeat sense, minimap toggle, pause/resume, restart with three lives, settings persistence, and a 390 px menu without horizontal overflow. No page errors, failed requests, external-origin requests, or production QA hook were observed. Localhost play remains supported; local and hosted settings/high scores are separate because storage is origin-specific.
 
 ## Launch
 
